@@ -4,59 +4,59 @@
   INCLUDE "macros.inc"
 
   
-	SECTION	"Org $00",HOME[$00]
+	SECTION	"Org $00",ROM0[$00]
 RST_00:	
 	jp	$100
 
-	SECTION	"Org $08",HOME[$08]
+	SECTION	"Org $08",ROM0[$08]
 RST_08:	
 	jp	$100
 
-	SECTION	"Org $10",HOME[$10]
+	SECTION	"Org $10",ROM0[$10]
 RST_10:
 	jp	$100
 
-	SECTION	"Org $18",HOME[$18]
+	SECTION	"Org $18",ROM0[$18]
 RST_18:
 	jp	$100
 
-	SECTION	"Org $20",HOME[$20]
+	SECTION	"Org $20",ROM0[$20]
 RST_20:
 	jp	$100
 
-	SECTION	"Org $28",HOME[$28]
+	SECTION	"Org $28",ROM0[$28]
 RST_28:
 	jp	$100
 
-	SECTION	"Org $30",HOME[$30]
+	SECTION	"Org $30",ROM0[$30]
 RST_30:
 	jp	$100
 
-	SECTION	"Org $38",HOME[$38]
+	SECTION	"Org $38",ROM0[$38]
 RST_38:
 	jp	$100
 
-	SECTION	"V-Blank IRQ Vector",HOME[$40]
+	SECTION	"V-Blank IRQ Vector",ROM0[$40]
 VBL_VECT:
 	jp VBlank
 	
-	SECTION	"LCD IRQ Vector",HOME[$48]
+	SECTION	"LCD IRQ Vector",ROM0[$48]
 LCD_VECT:
 	reti
 
-	SECTION	"Timer IRQ Vector",HOME[$50]
+	SECTION	"Timer IRQ Vector",ROM0[$50]
 TIMER_VECT:
 	reti
 
-	SECTION	"Serial IRQ Vector",HOME[$58]
+	SECTION	"Serial IRQ Vector",ROM0[$58]
 SERIAL_VECT:
 	reti
 
-	SECTION	"Joypad IRQ Vector",HOME[$60]
+	SECTION	"Joypad IRQ Vector",ROM0[$60]
 JOYPAD_VECT:
 	reti
 
-  SECTION "Org $100",HOME[$100]
+  SECTION "Org $100",ROM0[$100]
   nop
   jp      begin
 
@@ -113,6 +113,93 @@ begin::
   ld [rIE], a
   ei
 
+
+; make some bleeps
+  ld a,%10000000 ; enable
+  ldh [rAUDENA],a
+  ld a,$ff ; all channels
+  ldh [rAUDTERM],a
+  ld a,$77 ; max volume
+  ldh [rAUDVOL],a
+
+; channel 1
+
+; -- AUD1SWEEP/NR10 ($FF10)
+; -- Sweep register (R/W)
+; --
+; -- Bit 6-4 - Sweep Time
+; -- Bit 3   - Sweep Increase/Decrease
+; --           0: Addition    (frequency increases???)
+; --           1: Subtraction (frequency increases???)
+; -- Bit 2-0 - Number of sweep shift (# 0-7)
+; -- Sweep Time: (n*7.8ms)
+; --
+;EQU rNR10
+  ld a, %00001111
+  ldh [rAUD1SWEEP] ,a
+
+
+; --
+; -- AUD1LEN/NR11 ($FF11)
+; -- Sound length/Wave pattern duty (R/W)
+; --
+; -- Bit 7-6 - Wave Pattern Duty (00:12.5% 01:25% 10:50% 11:75%)
+; -- Bit 5-0 - Sound length data (# 0-63)
+; --
+  ld a, %10000000
+  ldh [rAUD1LEN],a
+
+
+; --
+; -- AUD1ENV/NR12 ($FF12)
+; -- Envelope (R/W)
+; --
+; -- Bit 7-4 - Initial value of envelope
+; -- Bit 3   - Envelope UP/DOWN
+; --           0: Decrease
+; --           1: Range of increase
+; -- Bit 2-0 - Number of envelope sweep (# 0-7)
+; --
+  ld a, %11110001
+  ldh [rAUD1ENV],a
+
+; --
+; -- AUD1LOW/NR13 ($FF13)
+; -- Frequency lo (W)
+; --
+  ld a, $00
+  ldh [rAUD1LOW],a
+
+
+; --
+; -- AUD1HIGH/NR14 ($FF14)
+; -- Frequency hi (W)
+; --
+; -- Bit 7   - Initial (when set, sound restarts)
+; -- Bit 6   - Counter/consecutive selection
+; -- Bit 2-0 - Frequency's higher 3 bits
+; --
+  ld a, %10001111
+  ldh [rAUD1HIGH],a
+
+.loop
+
+  call SerialTransfer
+  ldh a,[rSB] ; new address
+  ld c, a
+  call SerialTransfer
+  ldh a,[rSB] ; new data
+  ld [$FF00+c],a
+  ld b, a
+  coord hl, 3, 4
+  call DrawHexByte
+  ld c, b
+  coord hl, 6, 4
+  call DrawHexByte
+  jr .loop
+
+; 00112233 44556677 8899AABB CCDDEEFF
+
 .wait:
   halt
   nop
@@ -136,6 +223,15 @@ StopLCD:
   res     7,a             ; Reset bit 7 of LCDC
   ld      [rLCDC],a
 
+  ret
+
+SerialTransfer:
+  ld a, $80 ; start external transfer
+  ldh [rSC], a
+.transferWait
+  ldh a,[rSC]
+  bit 7, a ; is transfer done?
+  jr NZ, .transferWait
   ret
 
 ; c - byte
